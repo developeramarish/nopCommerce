@@ -1,6 +1,7 @@
 ﻿using Nop.Core;
 using Nop.Core.Caching;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Events;
 using Nop.Data;
 
 namespace Nop.Services.Catalog
@@ -12,6 +13,7 @@ namespace Nop.Services.Catalog
     {
         #region Fields
 
+        protected readonly IEventPublisher _eventPublisher;
         protected readonly IRepository<PredefinedProductAttributeValue> _predefinedProductAttributeValueRepository;
         protected readonly IRepository<Product> _productRepository;
         protected readonly IRepository<ProductAttribute> _productAttributeRepository;
@@ -24,7 +26,9 @@ namespace Nop.Services.Catalog
 
         #region Ctor
 
-        public ProductAttributeService(IRepository<PredefinedProductAttributeValue> predefinedProductAttributeValueRepository,
+        public ProductAttributeService(
+            IEventPublisher eventPublisher,
+            IRepository<PredefinedProductAttributeValue> predefinedProductAttributeValueRepository,
             IRepository<Product> productRepository,
             IRepository<ProductAttribute> productAttributeRepository,
             IRepository<ProductAttributeCombination> productAttributeCombinationRepository,
@@ -32,6 +36,7 @@ namespace Nop.Services.Catalog
             IRepository<ProductAttributeValue> productAttributeValueRepository,
             IStaticCacheManager staticCacheManager)
         {
+            _eventPublisher = eventPublisher;
             _predefinedProductAttributeValueRepository = predefinedProductAttributeValueRepository;
             _productRepository = productRepository;
             _productAttributeRepository = productAttributeRepository;
@@ -54,7 +59,10 @@ namespace Nop.Services.Catalog
         /// <returns>A task that represents the asynchronous operation</returns>
         public virtual async Task DeleteProductAttributeAsync(ProductAttribute productAttribute)
         {
+            var attributeMapping = await GetProductAttributeMappingByIdAttrAsync(productAttribute.Id);
             await _productAttributeRepository.DeleteAsync(productAttribute);
+            foreach (var attrMap in attributeMapping)
+                _eventPublisher.EntityDeleted(attrMap);
         }
 
         /// <summary>
@@ -208,6 +216,23 @@ namespace Nop.Services.Catalog
         public virtual async Task<ProductAttributeMapping> GetProductAttributeMappingByIdAsync(int productAttributeMappingId)
         {
             return await _productAttributeMappingRepository.GetByIdAsync(productAttributeMappingId, cache => default);
+        }
+
+        /// <summary>
+        /// Gets product attribute mappings by attribute identifier
+        /// </summary>
+        /// <param name="attributeId">Id product attribute</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the product attribute mapping
+        /// </returns>
+        public virtual async Task<IList<ProductAttributeMapping>> GetProductAttributeMappingByIdAttrAsync(int attributeId)
+        {
+            var query = from pam in _productAttributeMappingRepository.Table
+                        orderby pam.DisplayOrder, pam.Id
+                        where pam.ProductAttributeId == attributeId
+                        select pam;
+            return await query.ToListAsync();
         }
 
         /// <summary>
